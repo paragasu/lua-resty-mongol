@@ -5,12 +5,24 @@ local attachpairs_start = misc.attachpairs_start
 
 local setmetatable = setmetatable
 local pcall = pcall
+local tostring = tostring
+local tonumber = tonumber
+local strchar = string.char
+local strbyte = string.byte
+local strgsub = string.gsub
+local strsub = string.sub
+local strgmatch = string.gmatch
+local m_random = math.random
+local b_bxor = bit.bxor
+
 
 local colmt = require ( mod_name .. ".colmt" )
 local gridfs = require ( mod_name .. ".gridfs" )
 
 local dbmethods = { }
 local dbmt = { __index = dbmethods }
+
+local pbkdf2 = require "resty.nettle.pbkdf2"
 
 function dbmethods:cmd(q)
     local collection = "$cmd"
@@ -50,14 +62,14 @@ end
 local function xor_bytestr( a, b )
     local res = ""    
     for i=1,#a do
-        res = res .. string.char(bit.bxor(string.byte(a,i,i), string.byte(b, i, i)))
+        res = res .. strchar(b_bxor(strbyte(a,i,i), strbyte(b, i, i)))
     end
     return res
 end
 
 -- A simple implementation of PBKDF2_HMAC_SHA1
 local function pbkdf2_hmac_sha1( pbkdf2_key, iterations, salt, len )
-    local u1 = ngx.hmac_sha1(pbkdf2_key, salt .. string.char(0) .. string.char(0) .. string.char(0) .. string.char(1))
+    local u1 = ngx.hmac_sha1(pbkdf2_key, salt .. strchar(0) .. strchar(0) .. strchar(0) .. strchar(1))
     local ui = u1
     for i=1,iterations-1 do
         u1 = ngx.hmac_sha1(pbkdf2_key, u1)
@@ -65,7 +77,7 @@ local function pbkdf2_hmac_sha1( pbkdf2_key, iterations, salt, len )
     end
     if #ui < len then
         for i=1,len-(#ui) do
-            ui = string.char(0) .. ui
+            ui = strchar(0) .. ui
         end
     end
     return ui
@@ -97,8 +109,8 @@ function dbmethods:auth(username, password)
 end
 
 function dbmethods:auth_scram_sha1(username, password)
-    local user = string.gsub(string.gsub(username, '=', '=3D'), ',' , '=2C')
-    local nonce = ngx.encode_base64(string.sub(tostring(math.random()), 3 , 14))
+    local user = strgsub(strgsub(username, '=', '=3D'), ',' , '=2C')
+    local nonce = ngx.encode_base64(strsub(tostring(m_random()), 3 , 14))
     local first_bare = "n="  .. user .. ",r="  .. nonce
     local sasl_start_payload = ngx.encode_base64("n,," .. first_bare)
     
@@ -116,19 +128,20 @@ function dbmethods:auth_scram_sha1(username, password)
     local server_first = r['payload']
     local parsed_s = ngx.decode_base64(server_first)
     local parsed_t = {}
-    for k, v in string.gmatch(parsed_s, "(%w+)=([^,]*)") do
+    for k, v in strgmatch(parsed_s, "(%w+)=([^,]*)") do
         parsed_t[k] = v
     end
     local iterations = tonumber(parsed_t['i'])
     local salt = parsed_t['s']
     local rnonce = parsed_t['r']
 
-    if not string.sub(rnonce, 1, 12) == nonce then
+    if not strsub(rnonce, 1, 12) == nonce then
         return nil, 'Server returned an invalid nonce.'
     end
     local without_proof = "c=biws,r=" .. rnonce
     local pbkdf2_key = pass_digest ( username , password )
-    local salted_pass = pbkdf2_hmac_sha1(pbkdf2_key, iterations, ngx.decode_base64(salt), 20)
+    local salted_pass = pbkdf2.hmac_sha1(pbkdf2_key, iterations, ngx.decode_base64(salt), 20)
+    --local salted_pass = pbkdf2_hmac_sha1(pbkdf2_key, iterations, ngx.decode_base64(salt), 20)
     local client_key = ngx.hmac_sha1(salted_pass, "Client Key")
     local stored_key = ngx.sha1_bin(client_key)
     local auth_msg = first_bare .. ',' .. parsed_s .. ',' .. without_proof
@@ -149,13 +162,13 @@ function dbmethods:auth_scram_sha1(username, password)
     end
     parsed_s = ngx.decode_base64(r['payload'])
     parsed_t = {}
-    for k, v in string.gmatch(parsed_s, "(%w+)=([^,]*)") do
+    for k, v in strgmatch(parsed_s, "(%w+)=([^,]*)") do
         parsed_t[k] = v
     end
+
     if parsed_t['v'] ~= server_sig then
         return nil, "Server returned an invalid signature."
     end
-    
     if not r['done'] then
         r, err = self:cmd(attachpairs_start({
             saslContinue = 1 ;
