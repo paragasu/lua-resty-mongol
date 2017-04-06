@@ -115,6 +115,8 @@ Returns a collection object for more operations.
 
 ####n = col:count(query)
 
+####n = col:distinct(key, query)
+
 ####ok, err = col:drop()
 Returns 1 in case of success, or nil with error message.
 
