@@ -253,6 +253,19 @@ function colmethods:count(query)
     return r.n
 end
 
+function colmethods:distinct(key, query)
+    local r, err = self.db_obj:cmd(attachpairs_start({
+            key = key;
+            distinct = self.col;
+            query = query or { } ;
+        } , "distinct" ) )
+
+    if not r then
+        return nil, err
+    end
+    return r.values
+end
+
 function colmethods:drop()
     local r, err = self.db_obj:cmd({drop = self.col})
     if not r then
