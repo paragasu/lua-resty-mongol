@@ -152,7 +152,7 @@ function dbmethods:auth_scram_sha1(username, password)
     local server_key = ngx.hmac_sha1(salted_pass, "Server Key")
     local server_sig = ngx.encode_base64(ngx.hmac_sha1(server_key, auth_msg))
     
-    r, err = self:cmd(attachpairs_start({
+    local r, err = self:cmd(attachpairs_start({
             saslContinue = 1 ;
             conversationId = conversationId ;
             payload =  client_final ;
